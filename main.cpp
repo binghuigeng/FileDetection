@@ -54,8 +54,8 @@
 #include <string>
 #include <tuple>
 
-// 根据进程名终止目标程序
-void KillProcessByName(const std::wstring& processName) {
+// 根据进程名强制终止目标程序
+void ForceKillProcessByName(const std::wstring& processName) {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnapshot == INVALID_HANDLE_VALUE) {
         std::wcerr << L"Failed to create process snapshot: " << GetLastError() << std::endl;
@@ -70,15 +70,19 @@ void KillProcessByName(const std::wstring& processName) {
             if (processName == pe.szExeFile) {
                 HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
                 if (hProcess) {
-                    TerminateProcess(hProcess, 1);
-                    std::wcout << L"Terminated process: " << processName << std::endl;
+                    if (TerminateProcess(hProcess, 1)) {
+                        std::wcout << L"Successfully terminated process: " << processName << std::endl;
+                    } else {
+                        std::wcerr << L"Failed to terminate process: " << GetLastError() << std::endl;
+                    }
                     CloseHandle(hProcess);
                 } else {
-                    std::wcerr << L"Failed to open process: " << GetLastError() << std::endl;
+                    std::wcerr << L"Failed to open process handle: " << GetLastError() << std::endl;
                 }
-                break;
             }
         } while (Process32NextW(hSnapshot, &pe));
+    } else {
+        std::wcerr << L"Failed to enumerate processes: " << GetLastError() << std::endl;
     }
 
     CloseHandle(hSnapshot);
@@ -126,7 +130,7 @@ DWORD WINAPI MonitorFileWrite(LPVOID lpParam) {
 
                 if (fileName == targetFile) {
                     std::wcout << L"Detected write event on: " << fileName << std::endl;
-                    KillProcessByName(processName); // 终止写文件程序
+                    ForceKillProcessByName(processName); // 终止写文件程序
                     return 0;
                 }
 
