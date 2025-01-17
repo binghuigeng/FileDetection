@@ -52,11 +52,7 @@
 #include <tlhelp32.h>
 #include <iostream>
 #include <string>
-#include <thread>
-#include <atomic>
-
-// 监控标志
-std::atomic<bool> monitoring(true);
+#include <tuple>
 
 // 根据进程名终止目标程序
 void KillProcessByName(const std::wstring& processName) {
@@ -74,7 +70,7 @@ void KillProcessByName(const std::wstring& processName) {
             if (processName == pe.szExeFile) {
                 HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
                 if (hProcess) {
-                    TerminateProcess(hProcess, 1); // 立即结束指定的进程。强制终止一个正在运行的进程，并释放与该进程相关的所有资源。结束的过程是迅速而直接的
+                    TerminateProcess(hProcess, 1);
                     std::wcout << L"Terminated process: " << processName << std::endl;
                     CloseHandle(hProcess);
                 } else {
@@ -88,8 +84,13 @@ void KillProcessByName(const std::wstring& processName) {
     CloseHandle(hSnapshot);
 }
 
-// 文件监控
-void MonitorFileWrite(const std::wstring& directory, const std::wstring& targetFile, const std::wstring& processName) {
+// 文件监控线程函数
+DWORD WINAPI MonitorFileWrite(LPVOID lpParam) {
+    auto* params = reinterpret_cast<std::tuple<std::wstring, std::wstring, std::wstring>*>(lpParam);
+    const auto& directory = std::get<0>(*params);
+    const auto& targetFile = std::get<1>(*params);
+    const auto& processName = std::get<2>(*params);
+
     HANDLE hDir = CreateFileW(
         directory.c_str(),
         FILE_LIST_DIRECTORY,
@@ -102,19 +103,19 @@ void MonitorFileWrite(const std::wstring& directory, const std::wstring& targetF
 
     if (hDir == INVALID_HANDLE_VALUE) {
         std::wcerr << L"Failed to open directory for monitoring: " << GetLastError() << std::endl;
-        return;
+        return 1;
     }
 
     char buffer[1024];
     DWORD bytesReturned;
 
-    while (monitoring) {
+    while (true) {
         if (ReadDirectoryChangesW(
             hDir,
             buffer,
             sizeof(buffer),
             FALSE,
-            FILE_NOTIFY_CHANGE_LAST_WRITE, // 只会捕捉文件内容发生修改的事件，例如写入操作
+            FILE_NOTIFY_CHANGE_LAST_WRITE,
             &bytesReturned,
             nullptr,
             nullptr
@@ -126,7 +127,7 @@ void MonitorFileWrite(const std::wstring& directory, const std::wstring& targetF
                 if (fileName == targetFile) {
                     std::wcout << L"Detected write event on: " << fileName << std::endl;
                     KillProcessByName(processName); // 终止写文件程序
-                    return;
+                    return 0;
                 }
 
                 if (info->NextEntryOffset != 0) {
@@ -144,8 +145,8 @@ void MonitorFileWrite(const std::wstring& directory, const std::wstring& targetF
     }
 
     CloseHandle(hDir);
+    return 0;
 }
-
 
 int main() {
     // 监控文件夹路径
@@ -157,15 +158,41 @@ int main() {
     // 写文件程序名
     std::wstring processName = L"TxrUi.exe";
 
-    // 创建监控线程
-    std::thread monitorThread(MonitorFileWrite, directory, targetFile, processName);
+    // 参数打包
+    auto* params = new std::tuple<std::wstring, std::wstring, std::wstring>(directory, targetFile, processName);
+
+    // 创建线程
+    HANDLE hThread = CreateThread(
+        nullptr,                      // 默认安全属性
+        0,                         // 默认堆栈大小
+        MonitorFileWrite,          // 线程函数
+        params,                    // 参数
+        0,                         // 默认创建标志
+        nullptr                       // 不需要线程ID
+    );
+
+    if (hThread == nullptr) {
+        std::wcerr << L"Failed to create thread. Error: " << GetLastError() << std::endl;
+        delete params;
+        return 1;
+    }
+
+    // 设置线程优先级
+    if (SetThreadPriority(hThread, THREAD_PRIORITY_HIGHEST)) {
+        std::wcout << L"Thread priority set successfully." << std::endl;
+    } else {
+        std::wcerr << L"Failed to set thread priority. Error: " << GetLastError() << std::endl;
+    }
 
     std::wcout << L"Monitoring directory for changes. Press Enter to exit." << std::endl;
     std::wcin.get();
 
-    // 停止监控并等待线程退出
-    monitoring = false;
-    monitorThread.join();
+    // 等待线程完成
+    WaitForSingleObject(hThread, INFINITE);
+
+    // 清理资源
+    CloseHandle(hThread);
+    delete params;
 
     return 0;
 }
