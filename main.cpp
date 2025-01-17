@@ -56,36 +56,12 @@
 
 // 根据进程名强制终止目标程序
 void ForceKillProcessByName(const std::wstring& processName) {
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnapshot == INVALID_HANDLE_VALUE) {
-        std::wcerr << L"Failed to create process snapshot: " << GetLastError() << std::endl;
-        return;
-    }
+    std::wstring command = L"taskkill /IM " + processName + L" /F";
 
-    PROCESSENTRY32W pe;
-    pe.dwSize = sizeof(PROCESSENTRY32W);
+    // 将命令转换为可执行的格式
+    _wsystem(command.c_str());
 
-    if (Process32FirstW(hSnapshot, &pe)) {
-        do {
-            if (processName == pe.szExeFile) {
-                HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-                if (hProcess) {
-                    if (TerminateProcess(hProcess, 1)) {
-                        std::wcout << L"Successfully terminated process: " << processName << std::endl;
-                    } else {
-                        std::wcerr << L"Failed to terminate process: " << GetLastError() << std::endl;
-                    }
-                    CloseHandle(hProcess);
-                } else {
-                    std::wcerr << L"Failed to open process handle: " << GetLastError() << std::endl;
-                }
-            }
-        } while (Process32NextW(hSnapshot, &pe));
-    } else {
-        std::wcerr << L"Failed to enumerate processes: " << GetLastError() << std::endl;
-    }
-
-    CloseHandle(hSnapshot);
+    std::wcout << L"Command executed: " << command << std::endl;
 }
 
 // 文件监控线程函数
