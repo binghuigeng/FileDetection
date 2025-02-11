@@ -1,6 +1,6 @@
 # Monitor File Kill Process
 """
-检测文件写入并立即终止进程
+监测文件写入并立即终止进程
 1. 使用 inotify（Linux）或 ReadDirectoryChangesW（Windows） 来监听文件打开而不仅仅是写入。
 2. 提高轮询频率，缩短检测间隔，尽量减少响应延迟。
 3. 直接监控文件句柄，在进程打开文件的瞬间杀死它。
@@ -14,7 +14,7 @@
     比 watchdog 更快，可以在文件刚被写入时就立刻触发杀进程逻辑。
 
 打包
-pyinstaller --onefile -i activity.ico --name FileDetection FileDetection.py
+pyinstaller --onefile -i activity.ico --name FileDetection file_detection.py
 """
 import sys
 import os
@@ -81,7 +81,7 @@ def monitor_file(file_to_watch, process_name):
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python FileDetection.py <file_path> <process_name>")
+        print("Usage: FileDetection <file_path> <process_name>")
         sys.exit(1)
 
     # 需要监控的文件路径
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     PROCESS_NAME = sys.argv[2]
 
     print(f"Monitoring {FILE_TO_WATCH} for activity...")
-    monitor_thread = threading.Thread(target=monitor_file(FILE_TO_WATCH, PROCESS_NAME), daemon=True)
+    monitor_thread = threading.Thread(target=monitor_file, args=(FILE_TO_WATCH, PROCESS_NAME), daemon=True)
     monitor_thread.start()
 
     try:
